@@ -79,7 +79,7 @@ function showPanel(target) {
 function showDashboard(user) {
   if (user) {
     const avatarUrl = user.avatar
-      ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=40`
+      ? '/api/staff/avatar'
       : null;
 
     clearNode(staffUserEl);

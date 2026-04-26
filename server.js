@@ -51,6 +51,7 @@ const PENDING_TTL_MS  = 24 * 60 * 60 * 1000;
 const CLAIMED_TTL_MS  = 15 * 60 * 1000;
 const REVIEWED_TTL_MS =  1 * 60 * 60 * 1000;
 const MAX_FILE_SIZE   = 10 * 1024 * 1024;
+const MAX_PENDING     = 500; // hard ceiling on in-memory documents; prevents RAM exhaustion under distributed upload flood
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png']);
 
@@ -85,6 +86,21 @@ function wipeBuffer(entry) {
   }
 }
 
+// Magic-byte allowlist — validates actual file content, not just the MIME header
+// sent by the client. Prevents mislabelled or polyglot uploads from entering RAM.
+const MAGIC_BYTES = {
+  'image/jpeg': [0xFF, 0xD8, 0xFF],
+  'image/png':  [0x89, 0x50, 0x4E, 0x47],
+};
+function validateMagicBytes(buffer, mimeType) {
+  const expected = MAGIC_BYTES[mimeType];
+  if (!expected || buffer.length < expected.length) return false;
+  for (let i = 0; i < expected.length; i++) {
+    if (buffer[i] !== expected[i]) return false;
+  }
+  return true;
+}
+
 function discordConfigured() {
   return DISCORD.clientId && DISCORD.clientSecret && DISCORD.redirectUri
       && DISCORD.guildId  && DISCORD.requiredRole;
@@ -96,7 +112,7 @@ setInterval(() => {
   for (const [h, e] of pendingStore)  { if (e.expiresAt < now) { wipeBuffer(e); pendingStore.delete(h); } }
   for (const [h, e] of claimedStore)  { if (e.expiresAt < now) { wipeBuffer(e); claimedStore.delete(h); } }
   for (const [h, e] of reviewedStore) { if (e.expiresAt < now) { reviewedStore.delete(h); } }
-}, 60_000);
+}, 60_000).unref(); // .unref() allows clean SIGTERM/SIGINT shutdown without waiting for next tick
 
 // ─── Security Middleware ─────────────────────────────────────────────────────
 app.use(helmet({
@@ -193,17 +209,21 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
 
   if (error) return res.redirect(`/staff?error=${encodeURIComponent(String(error).slice(0, 64))}`);
 
-  // CSRF check — state must match what we set in the session
-  if (!state || state !== req.session.oauthState) {
+  // CSRF check — delete state first (prevents reuse on retry), then validate
+  const expectedState = req.session.oauthState;
+  delete req.session.oauthState;
+  if (!state || state !== expectedState) {
     return res.redirect('/staff?error=invalid_state');
   }
-  delete req.session.oauthState;
 
   if (!code || typeof code !== 'string' || code.length > 256) {
     return res.redirect('/staff?error=invalid_code');
   }
 
   try {
+    // 5-second timeout on all Discord API calls (AbortSignal.timeout requires Node 18+)
+    const timeout = () => AbortSignal.timeout(5000);
+
     // 1. Exchange code for access token
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method:  'POST',
@@ -215,6 +235,7 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
         code,
         redirect_uri:  DISCORD.redirectUri,
       }),
+      signal: timeout(),
     });
     if (!tokenRes.ok) return res.redirect('/staff?error=token_failed');
 
@@ -222,35 +243,57 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
     if (!access_token) return res.redirect('/staff?error=token_missing');
 
     const authHeader = { Authorization: `Bearer ${access_token}` };
+    // Helper: revoke Discord token — fire-and-forget, never awaited
+    const revokeToken = () => fetch('https://discord.com/api/oauth2/token/revoke', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:    new URLSearchParams({
+        client_id:     DISCORD.clientId,
+        client_secret: DISCORD.clientSecret,
+        token:         access_token,
+      }),
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => {});
 
     // 2. Get user identity
-    const userRes = await fetch('https://discord.com/api/users/@me', { headers: authHeader });
-    if (!userRes.ok) return res.redirect('/staff?error=user_fetch_failed');
+    const userRes = await fetch('https://discord.com/api/users/@me', { headers: authHeader, signal: timeout() });
+    if (!userRes.ok) { revokeToken(); return res.redirect('/staff?error=user_fetch_failed'); }
     const user = await userRes.json();
 
     // 3. Check guild membership + role
     const memberRes = await fetch(
       `https://discord.com/api/users/@me/guilds/${encodeURIComponent(DISCORD.guildId)}/member`,
-      { headers: authHeader }
+      { headers: authHeader, signal: timeout() }
     );
 
-    if (memberRes.status === 404) return res.redirect('/staff?error=not_in_guild');
-    if (!memberRes.ok)            return res.redirect('/staff?error=member_fetch_failed');
+    if (memberRes.status === 404) { revokeToken(); return res.redirect('/staff?error=not_in_guild'); }
+    if (!memberRes.ok)            { revokeToken(); return res.redirect('/staff?error=member_fetch_failed'); }
 
     const member = await memberRes.json();
 
     if (!Array.isArray(member.roles) || !member.roles.includes(DISCORD.requiredRole)) {
+      revokeToken();
       return res.redirect('/staff?error=missing_role');
     }
+
+    // 4. Revoke token immediately — we have everything we need, no reason to keep it alive
+    revokeToken();
+
+    // 5. Sanitise values from Discord API before storing in session
+    const SNOWFLAKE_RE = /^\d{15,21}$/;
+    const AVATAR_RE    = /^[0-9a-f]{32}$/;
+    const safeId       = SNOWFLAKE_RE.test(user.id ?? '')     ? user.id      : null;
+    const safeAvatar   = AVATAR_RE.test(user.avatar ?? '')    ? user.avatar  : null;
+    const safeUsername = String(user.global_name || user.username || 'Unknown').slice(0, 64);
 
     // All checks passed — create an authenticated session
     req.session.regenerate((err) => {
       if (err) return res.redirect('/staff?error=session_error');
       req.session.isStaff = true;
       req.session.discord = {
-        id:       user.id,
-        username: user.global_name || user.username,
-        avatar:   user.avatar,
+        id:       safeId,
+        username: safeUsername,
+        avatar:   safeAvatar,
       };
       res.redirect('/staff');
     });
@@ -263,7 +306,11 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
 
 // POST /auth/discord/logout
 app.post('/auth/discord/logout', requireStaff, (req, res) => {
-  req.session.destroy(() => {
+  req.session.destroy((err) => {
+    if (err) console.error('[logout] session.destroy failed:', err.message);
+    // Clear the cookie regardless — even if server-side destroy failed,
+    // removing the cookie prevents the client from sending it again.
+    // The session will expire naturally via maxAge.
     res.clearCookie('sid');
     res.json({ success: true });
   });
@@ -276,6 +323,12 @@ app.post('/auth/discord/logout', requireStaff, (req, res) => {
 // to share with a staff member. The hash expires after 24 hours.
 app.post('/api/upload', uploadLimiter, upload.single('idImage'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file received.' });
+
+  // Validate actual file magic bytes — guards against MIME spoofing via Content-Type header
+  if (!validateMagicBytes(req.file.buffer, req.file.mimetype)) {
+    req.file.buffer.fill(0);
+    return res.status(415).json({ error: 'File content does not match the declared type. Only JPEG and PNG are accepted.' });
+  }
 
   // Collision-safe hash generation (probability of collision is negligible
   // with 2^32 space and at most a few hundred active submissions at any time)
@@ -292,6 +345,11 @@ app.post('/api/upload', uploadLimiter, upload.single('idImage'), (req, res) => {
   if (attempts >= 20) {
     wipeBuffer({ imageBuffer: req.file.buffer });
     return res.status(503).json({ error: 'Service temporarily unavailable. Please retry.' });
+  }
+
+  if (pendingStore.size >= MAX_PENDING) {
+    wipeBuffer({ imageBuffer: req.file.buffer });
+    return res.status(503).json({ error: 'Service is currently at capacity. Please try again later.' });
   }
 
   const now = Date.now();
@@ -334,12 +392,46 @@ app.get('/api/status/:hash', statusLimiter, (req, res) => {
 // ─── Staff Routes ─────────────────────────────────────────────────────────────
 
 // GET /api/staff/me  — used by the frontend to check auth state
-app.get('/api/staff/me', requireStaff, (req, res) => {
+app.get('/api/staff/me', requireStaff, staffLimiter, (req, res) => {
   res.json({ user: req.session.discord });
 });
 
+// GET /api/staff/avatar  — proxies the Discord CDN avatar through the server.
+// Keeps all image loads same-origin (satisfies imgSrc: 'self' CSP and COEP).
+// Validates snowflake ID and avatar hash format to prevent SSRF.
+app.get('/api/staff/avatar', requireStaff, staffLimiter, async (req, res) => {
+  const { id, avatar } = req.session.discord || {};
+  if (!id || !avatar) return res.status(404).end();
+
+  // Discord snowflake: 15-21 digit integer; avatar hash: 32 hex chars
+  if (!/^\d{15,21}$/.test(id) || !/^[0-9a-f]{32}$/.test(avatar)) {
+    return res.status(400).end();
+  }
+
+  try {
+    const cdnRes = await fetch(`https://cdn.discordapp.com/avatars/${id}/${avatar}.png?size=40`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!cdnRes.ok) return res.status(404).end();
+    const buf = Buffer.from(await cdnRes.arrayBuffer());
+    // Verify the CDN response is actually a PNG before serving
+    const PNG_MAGIC = [0x89, 0x50, 0x4E, 0x47];
+    if (buf.length < 4 || PNG_MAGIC.some((b, i) => buf[i] !== b)) {
+      return res.status(502).end();
+    }
+    res.set({
+      'Content-Type':           'image/png',
+      'Cache-Control':          'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(buf);
+  } catch {
+    res.status(502).end();
+  }
+});
+
 // GET /api/build  — exposes build metadata to the frontend footer
-app.get('/api/build', (_, res) => {
+app.get('/api/build', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false }), (_, res) => {
   res.json({ year: new Date().getFullYear(), gitHash: GIT_HASH });
 });
 
@@ -395,14 +487,14 @@ app.post('/api/staff/lookup', requireStaff, staffLimiter, (req, res) => {
 // GET /api/staff/image/:hash
 // Serves the raw image buffer. Only the staff member who claimed it can fetch it.
 // Cache headers ensure the browser never caches this response.
-app.get('/api/staff/image/:hash', requireStaff, (req, res) => {
+app.get('/api/staff/image/:hash', requireStaff, staffLimiter, (req, res) => {
   const hash = (req.params.hash ?? '').toLowerCase().trim();
   if (!HASH_RE.test(hash)) return res.status(400).json({ error: 'Invalid UUID format.' });
 
   const entry = claimedStore.get(hash);
   if (!entry) return res.status(404).json({ error: 'Document not found or the 15-minute viewing window has expired.' });
 
-  if (entry.staffId && entry.staffId !== req.session.discord?.id) {
+  if (entry.staffId === null || entry.staffId !== req.session.discord?.id) {
     return res.status(403).json({ error: 'This document was claimed by a different staff session.' });
   }
 
@@ -419,7 +511,7 @@ app.get('/api/staff/image/:hash', requireStaff, (req, res) => {
 // POST /api/staff/done/:hash
 // Staff marks the document as reviewed. Buffer is zeroed immediately and the
 // document is removed from memory — this action cannot be undone.
-app.post('/api/staff/done/:hash', requireStaff, (req, res) => {
+app.post('/api/staff/done/:hash', requireStaff, staffLimiter, (req, res) => {
   const hash = (req.params.hash ?? '').toLowerCase().trim();
   if (!HASH_RE.test(hash)) return res.status(400).json({ error: 'Invalid UUID format.' });
 
@@ -427,7 +519,7 @@ app.post('/api/staff/done/:hash', requireStaff, (req, res) => {
   if (!entry) {
     return res.status(404).json({ error: 'Document not found or already processed.' });
   }
-  if (entry.staffId && entry.staffId !== req.session.discord?.id) {
+  if (entry.staffId === null || entry.staffId !== req.session.discord?.id) {
     return res.status(403).json({ error: 'Only the staff member who claimed this document can finalise it.' });
   }
 
@@ -450,7 +542,7 @@ app.use((err, _req, res, _next) => {
     return res.status(413).json({ error: `File too large. Maximum is ${MAX_FILE_SIZE / 1_048_576} MB.` });
   }
   if (err.status === 415) {
-    return res.status(415).json({ error: 'Unsupported file type. Use JPEG, PNG, WebP or PDF.' });
+    return res.status(415).json({ error: 'Unsupported file type. Only JPEG and PNG are accepted.' });
   }
   console.error('[ERROR]', err.message);
   res.status(500).json({ error: 'Internal server error.' });

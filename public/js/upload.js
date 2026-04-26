@@ -180,12 +180,6 @@ function startPoll(hash) {
 }
 
 // ─── Status check form ────────────────────────────────────────────────────────
-statusForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const hash = statusInput.value.trim().toUpperCase();
-  if (hash) checkStatus(hash);
-});
-
 async function checkStatus(hash) {
   try {
     const res  = await fetch(`/api/status/${encodeURIComponent(hash)}`);
@@ -197,7 +191,7 @@ async function checkStatus(hash) {
 }
 
 function renderStatus(httpStatus, data, hash) {
-  if (httpStatus === 400) { renderStatusText('error', 'Invalid code format. Expected XXXX-XXXX.'); return; }
+  if (httpStatus === 400) { renderStatusText('error', 'Invalid code format. Expected a UUID (e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).'); return; }
 
   if (httpStatus === 404 || data.status === 'not_found') {
     renderStatusText('not-found',
