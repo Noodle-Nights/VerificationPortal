@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Age Verification — Noodle Nights</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <header class="top-nav">
+    <div class="nav-brand">
+      <span class="nav-icon">🔒</span>
+      <span>Noodle Nights Verification Portal</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── Steps indicator ──────────────────────────────────────────── -->
+    <div class="steps" id="stepsBar">
+      <div class="step active" id="step1">
+        <div class="step-circle">1</div>
+        <span>Upload ID</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step2">
+        <div class="step-circle">2</div>
+        <span>Share Code</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step3">
+        <div class="step-circle">3</div>
+        <span>Staff Reviews</span>
+      </div>
+    </div>
+
+    <!-- ── Upload card ───────────────────────────────────────────────── -->
+    <div class="card" id="uploadCard">
+      <div class="card-icon">📄</div>
+      <h1>Upload Your ID</h1>
+      <p class="subtitle">
+        Upload your ID or passport. <strong>Only your date of birth is checked.</strong><br>
+        Your document is stored in server RAM only and is permanently destroyed
+        after a staff member reviews it — it is <em>never</em> saved to disk.
+      </p>
+
+      <form id="uploadForm" novalidate>
+        <div class="drop-zone" id="dropZone">
+          <input
+            type="file"
+            id="fileInput"
+            name="idImage"
+            accept="image/jpeg,image/png"
+            required
+            aria-label="Select ID document"
+          >
+          <label for="fileInput" class="drop-label" id="dropLabel">
+            <div class="drop-icon">⬆</div>
+            <span id="dropText">Click to select or drag &amp; drop</span>
+            <small>JPEG &nbsp;·&nbsp; PNG &nbsp;·&nbsp; Max 10 MB</small>
+          </label>
+        </div>
+        <button type="submit" id="submitBtn" class="btn btn-primary" disabled>
+          Upload for Verification
+        </button>
+      </form>
+
+      <div class="upload-error" id="uploadError" hidden></div>
+    </div>
+
+    <!-- ── Hash card (shown after upload) ───────────────────────────── -->
+    <div class="card card-success" id="hashCard" hidden>
+      <div class="card-icon">✅</div>
+      <h1>Upload Successful</h1>
+      <p class="subtitle">
+        Share the code below with a staff member via Discord.
+        They will use it to look up and verify your document.
+      </p>
+
+      <div class="hash-display-wrapper">
+        <label class="field-label">Your Verification Code</label>
+        <div class="hash-display" id="hashDisplay" aria-label="Verification code"></div>
+        <button class="btn btn-secondary" id="copyBtn">Copy Code</button>
+      </div>
+
+      <div class="expiry-banner" id="expiryBanner">
+        <span class="expiry-icon">⏱</span>
+        <span>Expires in <strong id="expiryCountdown">24h 00m</strong></span>
+        <span class="expiry-note">— document is permanently deleted when this reaches zero</span>
+      </div>
+
+      <div class="info-steps">
+        <div class="info-step">
+          <span class="info-num">1</span>
+          <span>Copy the code above</span>
+        </div>
+        <div class="info-step">
+          <span class="info-num">2</span>
+          <span>Send it to a staff member via Discord DM</span>
+        </div>
+        <div class="info-step">
+          <span class="info-num">3</span>
+          <span>Wait — you'll see the status below update when they review it</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Status card ───────────────────────────────────────────────── -->
+    <div class="card" id="statusCard">
+      <h2>Check Verification Status</h2>
+      <p class="subtitle">Enter your code at any time to see the current status.</p>
+
+      <form id="statusForm">
+        <div class="input-row">
+          <input
+            type="text"
+            id="statusInput"
+            class="hash-input"
+            placeholder="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+            maxlength="36"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Verification code"
+          >
+          <button type="submit" class="btn btn-secondary">Check</button>
+        </div>
+      </form>
+
+      <div id="statusResult" class="status-result" aria-live="polite"></div>
+    </div>
+
+  </main>
+
+  <footer>
+    <p>Documents are stored in RAM only. They are permanently destroyed after verification or after 24 hours — whichever comes first. Nothing is ever written to disk.</p>
+    <p class="footer-copy">
+      &copy; <span id="footerYear"></span> Noodle Nights &nbsp;&middot;&nbsp;
+      Build <span id="footerHash">&#x2014;</span> &nbsp;&middot;&nbsp;
+      Source code: <span>Link coming soon</span>
+    </p>
+  </footer>
+
+  <script src="/js/no-save.js"></script>
+  <script src="/js/footer.js"></script>
+  <script src="/js/upload.js"></script>
+</body>
+</html>
+

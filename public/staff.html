@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Portal — Noodle Nights</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <header class="top-nav">
+    <div class="nav-brand">
+      <span class="nav-icon">🔒</span>
+      <span>Noodle Nights Verification Portal</span>
+      <span class="nav-badge">Staff Portal</span>
+    </div>
+    <div class="nav-user" id="navUser" hidden>
+      <div class="staff-user" id="staffUser"></div>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">Sign Out</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── State 1: Login ──────────────────────────────────────────── -->
+    <div class="card card-center" id="loginState" hidden>
+      <div class="card-icon">🛡️</div>
+      <h1>Staff Access</h1>
+      <p class="subtitle">
+        Sign in with Discord to access the verification portal.<br>
+        You must be a member of the authorised server and hold the required role.
+      </p>
+
+      <a href="/auth/discord" class="btn btn-discord" id="discordLoginBtn">
+        <svg class="discord-logo" viewBox="0 0 127.14 96.36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z" fill="currentColor"/>
+        </svg>
+        Sign in with Discord
+      </a>
+
+      <div class="login-error" id="loginError" hidden></div>
+    </div>
+
+    <!-- ── State 2: Hash lookup ────────────────────────────────────── -->
+    <div class="card" id="lookupState" hidden>
+
+      <div class="card-icon">🔍</div>
+      <h1>Look Up Document</h1>
+      <p class="subtitle">
+        Ask the user for their <strong>verification code</strong> (shared via Discord DM).
+        Enter it below to claim and view their document.
+        You are the only person who will see it — the code is then permanently destroyed.
+      </p>
+
+      <form id="lookupForm">
+        <label class="field-label" for="hashLookupInput">Verification Code</label>
+        <div class="input-row">
+          <input
+            type="text"
+            id="hashLookupInput"
+            class="hash-input"
+            placeholder="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+            maxlength="36"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Verification code"
+          >
+          <button type="submit" class="btn btn-primary">Look Up</button>
+        </div>
+        <p class="hint">Paste the UUID the user shared in Discord (e.g. a3b7f2c1-d4e5-4f6a-b7c8-d9e0f1a2b3c4)</p>
+      </form>
+
+      <div class="lookup-error" id="lookupError" hidden></div>
+    </div>
+
+    <!-- ── State 3: One-time view warning ─────────────────────────── -->
+    <div class="card card-warning" id="warningState" hidden>
+      <div class="card-icon warning-icon">⚠️</div>
+      <h1>One-Time View Warning</h1>
+
+      <div class="warning-box">
+        <p>You are about to view a sensitive identity document. Please read carefully:</p>
+        <ul class="warning-list">
+          <li><strong>This document can only be viewed once.</strong> Once you confirm, it cannot be re-opened.</li>
+          <li>A <strong>15-minute timer</strong> will begin the moment you click confirm.</li>
+          <li>The document is <strong>permanently and irreversibly destroyed</strong> when you click Done or when the timer expires — whichever comes first.</li>
+          <li>Do not share your screen or take screenshots during review.</li>
+          <li>Only verify that the date of birth shows the person is 18 or older.</li>
+        </ul>
+      </div>
+
+      <div class="warning-actions">
+        <button class="btn btn-ghost" id="cancelWarningBtn">Cancel</button>
+        <button class="btn btn-warning" id="confirmViewBtn">I Understand — View Document</button>
+      </div>
+    </div>
+
+    <!-- ── State 4: Document viewer ───────────────────────────────── -->
+    <div class="card card-viewer" id="viewerState" hidden>
+
+      <div class="viewer-topbar">
+        <h2>Review Document</h2>
+        <div class="timer-block" id="timerBlock">
+          <span class="timer-label">Auto-destroys in</span>
+          <span class="timer-display" id="timerDisplay">15:00</span>
+        </div>
+      </div>
+
+      <div id="docContainer" class="doc-container"></div>
+
+      <div class="viewer-footer">
+        <p class="viewer-note">
+          Review the date of birth only. Notify the user of the outcome via Discord.
+        </p>
+        <button class="btn btn-done" id="doneBtn">
+          Mark as Done — Destroy Document
+        </button>
+        <p class="hint" id="doneConfirmHint" hidden>
+          Click again within 3 seconds to confirm. This cannot be undone.
+        </p>
+      </div>
+    </div>
+
+    <!-- ── State 5: Done confirmation ─────────────────────────────── -->
+    <div class="card card-center card-success" id="doneState" hidden>
+      <div class="card-icon">✅</div>
+      <h1>Document Destroyed</h1>
+      <p class="subtitle">
+        The document has been permanently wiped from memory.
+        Nothing was written to disk at any point.
+      </p>
+      <p class="subtitle">
+        Notify the user of your decision via Discord.
+      </p>
+      <button class="btn btn-secondary" id="reviewAnotherBtn">Review Another</button>
+    </div>
+
+  </main>
+
+  <footer>
+    <p class="footer-copy">
+      &copy; <span id="footerYear"></span> Noodle Nights &nbsp;&middot;&nbsp;
+      Build <span id="footerHash">&#x2014;</span> &nbsp;&middot;&nbsp;
+      Source code: <span>Link coming soon</span>
+    </p>
+  </footer>
+
+  <script src="/js/no-save.js"></script>
+  <script src="/js/footer.js"></script>
+  <script src="/js/staff.js"></script>
+</body>
+</html>
+
