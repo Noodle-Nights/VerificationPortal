@@ -673,6 +673,13 @@ footer {
   opacity: 0.7;
 }
 
+.footer-link {
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.footer-link:hover { color: #fff; }
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 480px) {
   .card { padding: 1.4rem; }
