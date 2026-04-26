@@ -24,14 +24,21 @@ A secure, privacy-first age verification platform. Users upload a photo ID; a st
 |---|---|
 | Storage | RAM only — `multer` `memoryStorage()`, zero disk writes |
 | Authentication | Discord OAuth2 — must be in specific guild + hold a specific role |
+| Session hardening | `session.regenerate()` on login; `httpOnly`, `sameSite: lax`, `secure` in production |
+| CSRF protection | Random 16-byte hex state token; deleted before comparison to prevent reuse on retry |
 | Submission IDs | UUID v4 (122 bits entropy) via `crypto.randomUUID()` |
 | TTLs | Pending: 24 h · Claimed: 15 min · Reviewed: 1 h |
+| Capacity cap | `MAX_PENDING = 500` — rejects uploads when the pending store is full (prevents RAM exhaustion) |
 | Wipe | `Buffer.fill(0)` before GC on review, expiry, or cleanup tick |
 | Staff access | Hash-only lookup — staff cannot browse submissions |
+| Ownership | Image and done routes verify the claiming staff member's Discord ID before serving |
 | One-time view | Document claimed on first lookup; second lookup returns 409 |
-| Headers | Helmet strict CSP, HSTS, `no-store` cache on image route |
-| Rate limiting | Upload: 5/min · Auth: 10/min · Staff: 30/min |
-| File types | JPEG and PNG only |
+| File validation | MIME allowlist (JPEG, PNG) + magic byte check — guards against MIME spoofing |
+| Avatar proxy | Discord CDN avatar served via `/api/staff/avatar` (same-origin) — satisfies strict CSP; SSRF-safe via snowflake + hash regex |
+| Discord API | Token revoked immediately after OAuth; all external calls timeout after 5 s |
+| Session values | Discord API values (ID, avatar hash) validated against regex before storing in session |
+| Headers | Helmet strict CSP (`defaultSrc/imgSrc/scriptSrc/styleSrc: 'self'`, `objectSrc/frameSrc: 'none'`), COEP, `no-store` cache on image route |
+| Rate limiting | Upload: 5/15 min · Status: 40/5 min · Auth: 25/15 min · Staff: 20/5 min · Build: 30/1 min |
 
 ---
 
