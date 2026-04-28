@@ -154,12 +154,12 @@ app.use(session({
 // /staff/login — public: login form for unauthenticated staff
 app.get('/staff/login', (req, res) => {
   if (req.session?.isStaff) return res.redirect('/staff');
-  res.sendFile(path.join(__dirname, 'public', 'staff-login.html'));
+  res.sendFile(path.join(__dirname, 'views', 'staff-login.html'));
 });
 // /staff — protected: only served to authenticated staff
 app.get('/staff', (req, res) => {
   if (!req.session?.isStaff) return res.redirect('/staff/login');
-  res.sendFile(path.join(__dirname, 'public', 'staff.html'));
+  res.sendFile(path.join(__dirname, 'views', 'staff.html'));
 });
 
 // ─── Rate Limiters ───────────────────────────────────────────────────────────
