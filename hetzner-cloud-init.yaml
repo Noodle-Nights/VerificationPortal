@@ -10,8 +10,49 @@ packages:
 
 runcmd:
   - echo "=== BEGIN SERVER SETUP ===" >> /root/cloud-init-output.log
+  # Wait for Hetzner metadata API to respond — confirms network + cloud-init link is up
+  - until curl -sf -o /dev/null --max-time 2 http://169.254.169.254/latest/meta-data; do echo "Waiting for metadata API…" >> /root/cloud-init-output.log; sleep 3; done
+  - echo "Metadata API ready." >> /root/cloud-init-output.log
   - pip3 install asciinema >> /root/cloud-init-output.log 2>&1
+  # ── nginx ──────────────────────────────────────────────────────────────────
   - dnf install -y nginx >> /root/cloud-init-output.log 2>&1
   - systemctl enable nginx >> /root/cloud-init-output.log 2>&1
   - systemctl start nginx >> /root/cloud-init-output.log 2>&1
+  # ── Node.js 22 (LTS) via NodeSource ───────────────────────────────────────
+  - curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - >> /root/cloud-init-output.log 2>&1
+  - dnf install -y nodejs >> /root/cloud-init-output.log 2>&1
+  - node --version >> /root/cloud-init-output.log 2>&1
+  # ── PM2 ────────────────────────────────────────────────────────────────────
+  - npm install -g pm2 >> /root/cloud-init-output.log 2>&1
+  - pm2 startup systemd -u root --hp /root >> /root/cloud-init-output.log 2>&1
+  # ── App user & directory ───────────────────────────────────────────────────
+  - useradd --system --no-create-home --shell /sbin/nologin nodeapp >> /root/cloud-init-output.log 2>&1
+  - mkdir -p /opt/secure-id-process
+  - chown nodeapp:nodeapp /opt/secure-id-process
+  - chmod 750 /opt/secure-id-process
+  # ── Systemd service unit ───────────────────────────────────────────────────
+  - |
+    cat > /etc/systemd/system/verification-portal.service << 'EOF'
+    [Unit]
+    Description=Noodle Nights Verification Portal
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=nodeapp
+    WorkingDirectory=/opt/secure-id-process
+    ExecStart=/usr/bin/node server.js
+    EnvironmentFile=/opt/secure-id-process/.env
+    Restart=on-failure
+    RestartSec=5
+    # Hardening
+    NoNewPrivileges=true
+    PrivateTmp=true
+    ProtectSystem=strict
+    ReadWritePaths=/opt/secure-id-process
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl daemon-reload >> /root/cloud-init-output.log 2>&1
   - echo "=== SETUP COMPLETE ===" >> /root/cloud-init-output.log
