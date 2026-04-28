@@ -20,12 +20,6 @@ jobs:
       - name: Install dependencies
         run: sudo runuser -u nodeapp -- npm --prefix /opt/secure-id-process install --omit=dev
 
-      - name: Apply service hardening
-        run: |
-          sudo mkdir -p /etc/systemd/system/verification-portal.service.d
-          printf '[Service]\nMemorySwapMax=0\n' | sudo tee /etc/systemd/system/verification-portal.service.d/no-swap.conf > /dev/null
-          sudo systemctl daemon-reload
-
       - name: Restart service
         run: |
           sudo systemctl restart verification-portal
