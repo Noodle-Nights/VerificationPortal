@@ -50,7 +50,6 @@ runcmd:
     PrivateTmp=true
     ProtectSystem=strict
     ReadWritePaths=/opt/secure-id-process
-    MemorySwapMax=0
 
     [Install]
     WantedBy=multi-user.target
