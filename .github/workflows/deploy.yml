@@ -1,0 +1,39 @@
+name: Deploy to production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -e
+
+            # Mark directory as safe (avoids git dubious-ownership error)
+            git config --global --add safe.directory /opt/secure-id-process
+
+            cd /opt/secure-id-process
+
+            # Pull latest code
+            git pull origin main
+
+            # Install/update dependencies (production only, no devDependencies)
+            npm install --omit=dev
+
+            # Restart the service
+            systemctl restart verification-portal
+
+            # Confirm it is running
+            systemctl is-active --quiet verification-portal && echo "Service is running" || (echo "Service failed to start" && exit 1)
