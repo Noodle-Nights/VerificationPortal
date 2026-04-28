@@ -14,7 +14,8 @@ jobs:
       - name: Pull latest code
         run: |
           set -e
-          sudo runuser -u nodeapp -- git -C /opt/secure-id-process pull origin main
+          sudo runuser -u nodeapp -- git -C /opt/secure-id-process fetch origin
+          sudo runuser -u nodeapp -- git -C /opt/secure-id-process reset --hard origin/main
 
       - name: Install dependencies
         run: sudo runuser -u nodeapp -- npm --prefix /opt/secure-id-process install --omit=dev
