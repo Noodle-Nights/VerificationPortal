@@ -7,29 +7,19 @@ on:
 
 jobs:
   deploy:
-    name: SSH deploy
-    runs-on: ubuntu-latest
+    name: Deploy
+    runs-on: self-hosted
 
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            set -e
+      - name: Pull latest code
+        run: |
+          set -e
+          sudo runuser -u nodeapp -- git -C /opt/secure-id-process pull origin main
 
-            # Mark directory safe system-wide so nodeapp (nologin shell) can use git
-            git config --system --add safe.directory /opt/secure-id-process
+      - name: Install dependencies
+        run: sudo runuser -u nodeapp -- npm --prefix /opt/secure-id-process install --omit=dev
 
-            # Pull and install as nodeapp — keeps file ownership intact for the service
-            runuser -u nodeapp -- git -C /opt/secure-id-process pull origin main
-            runuser -u nodeapp -- npm --prefix /opt/secure-id-process install --omit=dev
-
-            # Root restarts the systemd service
-            systemctl restart verification-portal
-
-            # Confirm it is running
-            systemctl is-active --quiet verification-portal && echo "Service is running" || (echo "Service failed to start" && exit 1)
+      - name: Restart service
+        run: |
+          sudo systemctl restart verification-portal
+          sudo systemctl is-active --quiet verification-portal && echo "Service is running" || (echo "Service failed to start" && exit 1)
