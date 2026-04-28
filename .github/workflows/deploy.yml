@@ -21,18 +21,14 @@ jobs:
           script: |
             set -e
 
-            # Mark directory as safe (avoids git dubious-ownership error)
-            git config --global --add safe.directory /opt/secure-id-process
+            # Mark directory safe system-wide so nodeapp (nologin shell) can use git
+            git config --system --add safe.directory /opt/secure-id-process
 
-            cd /opt/secure-id-process
+            # Pull and install as nodeapp — keeps file ownership intact for the service
+            runuser -u nodeapp -- git -C /opt/secure-id-process pull origin main
+            runuser -u nodeapp -- npm --prefix /opt/secure-id-process install --omit=dev
 
-            # Pull latest code
-            git pull origin main
-
-            # Install/update dependencies (production only, no devDependencies)
-            npm install --omit=dev
-
-            # Restart the service
+            # Root restarts the systemd service
             systemctl restart verification-portal
 
             # Confirm it is running
