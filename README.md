@@ -56,7 +56,7 @@ Yes — this entire project is open source. You can read every line of the serve
 
 The server setup process (installing software, configuring the web server, hardening SSH, etc.) was recorded and published so you can see exactly how the machine was set up:
 
-**[Watch the server setup recording on asciinema →](https://asciinema.org/a/983758)**
+**[Watch the server setup recording on asciinema →](https://asciinema.org/a/5VwWwCQrrXKWWhZB)**
 
 > The only information removed from this recording before publishing is the server's IP addresses, SSH keys, and SSL certificate. Everything else is shown exactly as it happened.
 

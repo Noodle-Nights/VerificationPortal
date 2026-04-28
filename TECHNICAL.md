@@ -141,7 +141,7 @@ A [`hetzner-cloud-init.yaml`](hetzner-cloud-init.yaml) file is included to fully
 
 The complete server setup session was recorded and published:
 
-**[Watch the server setup recording on asciinema →](https://asciinema.org/a/983758)**
+**[Watch the server setup recording on asciinema →](https://asciinema.org/a/5VwWwCQrrXKWWhZB)**
 
 > The only information removed from this recording before publishing is the server's IP addresses, SSH host keys/fingerprints/randomart, and SSL certificate + private key. All commands, output, configuration, and timing are shown exactly as they happened.
 
