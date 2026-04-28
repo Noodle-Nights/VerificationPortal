@@ -37,28 +37,16 @@ let doneConfirmTimer  = null;
 
 // ─── Init — check if already authenticated ────────────────────────────────────
 (async function init() {
-  // Always start from loginState immediately (prevents bfcache showing stale panels)
-  showPanel(loginState);
-
-  // Show login error from OAuth redirect query string
-  const params = new URLSearchParams(window.location.search);
-  const oauthError = params.get('error');
-  if (oauthError) {
-    showLoginError(oauthErrorMessage(oauthError));
-    // Clean URL without reloading
-    window.history.replaceState({}, '', '/staff');
-  }
-
   try {
     const res = await fetch('/api/staff/me');
     if (res.ok) {
       const { user } = await res.json();
       showDashboard(user);
     } else {
-      showPanel(loginState);
+      location.href = '/staff/login';
     }
   } catch {
-    showPanel(loginState);
+    location.href = '/staff/login';
   }
 }());
 
@@ -140,7 +128,7 @@ logoutBtn.addEventListener('click', async () => {
     currentHash = null;
     clearNode(docContainer);
     stopTimer();
-    showPanel(loginState);
+    location.href = '/staff/login';
   }
 });
 
@@ -330,8 +318,7 @@ function handleUnauth() {
   stopTimer();
   clearNode(docContainer);
   currentHash = null;
-  showPanel(loginState);
-  showLoginError('Your session has expired. Please sign in again.');
+  location.href = '/staff/login';
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

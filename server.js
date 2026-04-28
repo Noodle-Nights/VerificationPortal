@@ -133,9 +133,6 @@ app.use(helmet({
 app.use(express.json({ limit: '4kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Clean URL for the staff portal — /staff serves staff.html
-app.get('/staff', (_, res) => res.sendFile(path.join(__dirname, 'public', 'staff.html')));
-
 // ─── Session ─────────────────────────────────────────────────────────────────
 // sameSite: 'lax' (not 'strict') is required — Discord OAuth redirect back to
 // our callback URL is a cross-site top-level GET and 'strict' would drop the
@@ -152,6 +149,18 @@ app.use(session({
     maxAge:   8 * 60 * 60 * 1000, // 8-hour staff session
   },
 }));
+
+// ─── Staff portal routes — must be after session middleware ─────────────────
+// /staff/login — public: login form for unauthenticated staff
+app.get('/staff/login', (req, res) => {
+  if (req.session?.isStaff) return res.redirect('/staff');
+  res.sendFile(path.join(__dirname, 'public', 'staff-login.html'));
+});
+// /staff — protected: only served to authenticated staff
+app.get('/staff', (req, res) => {
+  if (!req.session?.isStaff) return res.redirect('/staff/login');
+  res.sendFile(path.join(__dirname, 'public', 'staff.html'));
+});
 
 // ─── Rate Limiters ───────────────────────────────────────────────────────────
 const mkLimiter = (windowMs, max, message) =>
@@ -187,7 +196,7 @@ function requireStaff(req, res, next) {
 
 // GET /auth/discord  — start the OAuth flow
 app.get('/auth/discord', authLimiter, (req, res) => {
-  if (!discordConfigured()) return res.redirect('/staff?error=not_configured');
+  if (!discordConfigured()) return res.redirect('/staff/login?error=not_configured');
 
   const state = crypto.randomBytes(16).toString('hex');
   req.session.oauthState = state;
@@ -207,17 +216,17 @@ app.get('/auth/discord', authLimiter, (req, res) => {
 app.get('/auth/discord/callback', authLimiter, async (req, res) => {
   const { code, state, error } = req.query;
 
-  if (error) return res.redirect(`/staff?error=${encodeURIComponent(String(error).slice(0, 64))}`);
+  if (error) return res.redirect(`/staff/login?error=${encodeURIComponent(String(error).slice(0, 64))}`);
 
   // CSRF check — delete state first (prevents reuse on retry), then validate
   const expectedState = req.session.oauthState;
   delete req.session.oauthState;
   if (!state || state !== expectedState) {
-    return res.redirect('/staff?error=invalid_state');
+    return res.redirect('/staff/login?error=invalid_state');
   }
 
   if (!code || typeof code !== 'string' || code.length > 256) {
-    return res.redirect('/staff?error=invalid_code');
+    return res.redirect('/staff/login?error=invalid_code');
   }
 
   try {
@@ -237,10 +246,10 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
       }),
       signal: timeout(),
     });
-    if (!tokenRes.ok) return res.redirect('/staff?error=token_failed');
+    if (!tokenRes.ok) return res.redirect('/staff/login?error=token_failed');
 
     const { access_token } = await tokenRes.json();
-    if (!access_token) return res.redirect('/staff?error=token_missing');
+    if (!access_token) return res.redirect('/staff/login?error=token_missing');
 
     const authHeader = { Authorization: `Bearer ${access_token}` };
     // Helper: revoke Discord token — fire-and-forget, never awaited
@@ -257,7 +266,7 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
 
     // 2. Get user identity
     const userRes = await fetch('https://discord.com/api/users/@me', { headers: authHeader, signal: timeout() });
-    if (!userRes.ok) { revokeToken(); return res.redirect('/staff?error=user_fetch_failed'); }
+    if (!userRes.ok) { revokeToken(); return res.redirect('/staff/login?error=user_fetch_failed'); }
     const user = await userRes.json();
 
     // 3. Check guild membership + role
@@ -266,14 +275,14 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
       { headers: authHeader, signal: timeout() }
     );
 
-    if (memberRes.status === 404) { revokeToken(); return res.redirect('/staff?error=not_in_guild'); }
-    if (!memberRes.ok)            { revokeToken(); return res.redirect('/staff?error=member_fetch_failed'); }
+    if (memberRes.status === 404) { revokeToken(); return res.redirect('/staff/login?error=not_in_guild'); }
+    if (!memberRes.ok)            { revokeToken(); return res.redirect('/staff/login?error=member_fetch_failed'); }
 
     const member = await memberRes.json();
 
     if (!Array.isArray(member.roles) || !member.roles.includes(DISCORD.requiredRole)) {
       revokeToken();
-      return res.redirect('/staff?error=missing_role');
+      return res.redirect('/staff/login?error=missing_role');
     }
 
     // 4. Revoke token immediately — we have everything we need, no reason to keep it alive
@@ -288,7 +297,7 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
 
     // All checks passed — create an authenticated session
     req.session.regenerate((err) => {
-      if (err) return res.redirect('/staff?error=session_error');
+      if (err) return res.redirect('/staff/login?error=session_error');
       req.session.isStaff = true;
       req.session.discord = {
         id:       safeId,
@@ -300,7 +309,7 @@ app.get('/auth/discord/callback', authLimiter, async (req, res) => {
 
   } catch (e) {
     console.error('[Discord OAuth]', e.message);
-    res.redirect('/staff?error=internal_error');
+    res.redirect('/staff/login?error=internal_error');
   }
 });
 
